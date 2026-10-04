@@ -198,6 +198,61 @@ def get_response(
                 "content": result,
             })
 
+def run_chat_ui() -> None:
+    """Interactive terminal chat (ChatGPT-style)."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.markdown import Markdown
+    from rich.live import Live
+
+    console = Console()
+    history: list[dict] = []
+
+    console.print(Panel(
+        "[bold]LLM File Assistant[/]\n\n"
+        "Ask to list, read, search, or write files (e.g. sample_files/).\n"
+        "Type [bold]exit[/] or [bold]quit[/] to end.",
+        title="Chat",
+        border_style="blue",
+    ))
+    console.print()
+
+    while True:
+        console.print("[bold cyan]You[/]: ", end="")
+        user_input = input().strip()
+        if not user_input:
+            continue
+        if user_input.lower() in ("exit", "quit"):
+            console.print("[dim]Bye.[/]")
+            break
+
+        streamed_content: list[str] = []
+
+        def on_tool_calls(tool_names: list) -> None:
+            live.update(Panel("[dim]Calling: " + ", ".join(tool_names) + "[/]", title="Assistant", border_style="green"))
+
+        def stream_callback(chunk: str) -> None:
+            streamed_content.append(chunk)
+            live.update(Panel(Markdown("".join(streamed_content)), title="Assistant", border_style="green"))
+
+        with Live(Panel("[bold green]Thinking…[/]", title="Assistant", border_style="green"), console=console, refresh_per_second=8) as live:
+            response = get_response(
+                user_input,
+                history=history,
+                on_tool_calls=on_tool_calls,
+                stream_callback=stream_callback,
+            )
+
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": response})
+
+        console.print()
+
+
 if __name__ == "__main__":
-    prompt = "List files in sample_files, then read sample_files/notes.txt and summarize it in one sentence."
-    print(get_response(prompt))
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--chat":
+        run_chat_ui()
+    else:
+        prompt = "List files in sample_files, then read sample_files/notes.txt and summarize it in one sentence."
+        print(get_response(prompt))
