@@ -119,3 +119,90 @@ def list_files(directory: str, extension: str = None) -> list:
         
     except Exception:
         return []
+
+
+def write_file(filepath: str, content: str) -> dict:
+    """
+    Write string content to a file, creating parent directories if needed.
+    
+    Args:
+        filepath: Path where to write the file
+        content: String content to write
+        
+    Returns:
+        dict: {"success": bool, "path": str, "error": str | None}
+    """
+    try:
+        # Expand ~ and create Path object; ensure parent directories exist
+        path = Path(os.path.expanduser(filepath))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write content as UTF-8 text
+        path.write_text(content, encoding='utf-8')
+        
+        return {
+            "success": True,
+            "path": str(path),
+            "error": None
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "path": filepath,
+            "error": str(e)
+        }
+
+
+def search_in_file(filepath: str, keyword: str) -> dict:
+    """
+    Find all lines containing a keyword (case-insensitive) with surrounding context.
+    
+    Args:
+        filepath: Path to file to search in
+        keyword: Keyword to search for (case-insensitive)
+        
+    Returns:
+        dict: {"matches": [{"line": str, "line_number": int, "context_before": str, "context_after": str}], "keyword": str}
+    """
+    try:
+        # Expand ~ and read file content as text
+        filepath = os.path.expanduser(filepath)
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as file:
+            lines = file.readlines()
+        
+        # Prepare case-insensitive search
+        keyword_lower = keyword.lower()
+        matches = []
+        context_lines = 2  # Number of lines before/after to include as context
+        
+        # Search through each line
+        for i, line in enumerate(lines):
+            if keyword_lower in line.lower():
+                # Calculate context boundaries
+                start_context = max(0, i - context_lines)
+                end_context = min(len(lines), i + context_lines + 1)
+                
+                # Extract context lines
+                context_before = "".join(lines[start_context:i]).strip()
+                context_after = "".join(lines[i+1:end_context]).strip()
+                
+                matches.append({
+                    "line": line.rstrip('\n\r'),  # Remove trailing newlines but keep original text
+                    "line_number": i + 1,  # 1-based line numbering
+                    "context_before": context_before,
+                    "context_after": context_after
+                })
+        
+        return {
+            "matches": matches,
+            "keyword": keyword,
+            "error": None
+        }
+        
+    except Exception as e:
+        return {
+            "matches": [],
+            "keyword": keyword,
+            "error": str(e)
+        }
