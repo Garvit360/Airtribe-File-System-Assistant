@@ -8,11 +8,38 @@ This module provides four core functions that return consistent dict shapes:
 - search_in_file: Find keyword matches in files with surrounding context
 """
 
-from pypdf import PdfReader
-from docx import Document
-from pathlib import Path
-import os
+from __future__ import annotations
+
 from datetime import datetime
+import os
+from pathlib import Path
+
+from docx import Document
+from pypdf import PdfReader
+
+CONTEXT_LINES = 2
+
+
+def _keyword_matches(lines: list[str], keyword: str) -> list[dict[str, str | int]]:
+    """Return match dicts for keyword occurrences with surrounding line context."""
+    keyword_lower = keyword.lower()
+    matches: list[dict[str, str | int]] = []
+    line_count = len(lines)
+
+    for index, line in enumerate(lines):
+        if keyword_lower not in line.lower():
+            continue
+        start_context = max(0, index - CONTEXT_LINES)
+        end_context = min(line_count, index + CONTEXT_LINES + 1)
+        matches.append(
+            {
+                "line": line,
+                "line_number": index + 1,
+                "context_before": "\n".join(lines[start_context:index]).strip(),
+                "context_after": "\n".join(lines[index + 1 : end_context]).strip(),
+            }
+        )
+    return matches
 
 
 def read_file(filepath: str) -> dict:
@@ -74,7 +101,7 @@ def read_file(filepath: str) -> dict:
         }
 
 
-def list_files(directory: str, extension: str = None) -> list:
+def list_files(directory: str, extension: str | None = None) -> list[dict[str, str | int]]:
     """
     List all files in a directory with metadata, optionally filtered by extension.
     
@@ -157,54 +184,37 @@ def write_file(filepath: str, content: str) -> dict:
 def search_in_file(filepath: str, keyword: str) -> dict:
     """
     Find all lines containing a keyword (case-insensitive) with surrounding context.
-    
+
+    Uses the same text extraction as read_file, so PDF, DOCX, and TXT are supported.
+
     Args:
         filepath: Path to file to search in
         keyword: Keyword to search for (case-insensitive)
-        
+
     Returns:
-        dict: {"matches": [{"line": str, "line_number": int, "context_before": str, "context_after": str}], "keyword": str}
+        dict: {"matches": [...], "keyword": str, "error": str | None}
     """
     try:
-        # Expand ~ and read file content as text
-        filepath = os.path.expanduser(filepath)
-        with open(filepath, 'r', encoding='utf-8', errors='replace') as file:
-            lines = file.readlines()
-        
-        # Prepare case-insensitive search
-        keyword_lower = keyword.lower()
-        matches = []
-        context_lines = 2  # Number of lines before/after to include as context
-        
-        # Search through each line
-        for i, line in enumerate(lines):
-            if keyword_lower in line.lower():
-                # Calculate context boundaries
-                start_context = max(0, i - context_lines)
-                end_context = min(len(lines), i + context_lines + 1)
-                
-                # Extract context lines
-                context_before = "".join(lines[start_context:i]).strip()
-                context_after = "".join(lines[i+1:end_context]).strip()
-                
-                matches.append({
-                    "line": line.rstrip('\n\r'),  # Remove trailing newlines but keep original text
-                    "line_number": i + 1,  # 1-based line numbering
-                    "context_before": context_before,
-                    "context_after": context_after
-                })
-        
+        read_result = read_file(filepath)
+        if read_result["error"]:
+            return {
+                "matches": [],
+                "keyword": keyword,
+                "error": read_result["error"],
+            }
+        lines = (read_result["content"] or "").splitlines()
+        matches = _keyword_matches(lines, keyword)
         return {
             "matches": matches,
             "keyword": keyword,
-            "error": None
+            "error": None,
         }
-        
+
     except Exception as e:
         return {
             "matches": [],
             "keyword": keyword,
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -232,3 +242,20 @@ def get_path_by_name(root_dir: str, name: str) -> dict:
             matches.append(str(item.resolve()))
     
     return {"paths": matches, "name": name}
+
+
+def _demo() -> None:
+    """Print sample tool output for the resumes folder (no LLM required)."""
+    root = Path(__file__).resolve().parent
+    resumes_dir = root / "resumes"
+    print(f"Files in {resumes_dir.name}/:")
+    for entry in list_files(str(resumes_dir)):
+        print(f"  - {entry['name']} ({entry['size']} bytes, modified {entry['modified']})")
+    sample_pdf = resumes_dir / "resume_john_doe.pdf"
+    if sample_pdf.is_file():
+        search_result = search_in_file(str(sample_pdf), "Python")
+        print(f"\nSearch 'Python' in {sample_pdf.name}: {len(search_result['matches'])} match(es)")
+
+
+if __name__ == "__main__":
+    _demo()
