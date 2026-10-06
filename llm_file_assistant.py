@@ -36,7 +36,7 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string", "description": "Path to the file to read (e.g. sample_files/notes.txt)"},
+                    "filepath": {"type": "string", "description": "Path to the file to read (e.g. resumes/resume_john_doe.pdf)"},
                 },
                 "required": ["filepath"],
             },
@@ -46,11 +46,15 @@ tools = [
         "type": "function",
         "function": {
             "name": "list_files",
-            "description": "List all files in a directory with size and modified time. Use get_path_by_name first to find where a directory lives.",
+            "description": "List all files in a directory with size and modified time. Optionally filter by extension (e.g. .pdf). Use get_path_by_name first to find where a directory lives.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "directory": {"type": "string", "description": "Path to the directory to list"},
+                    "extension": {
+                        "type": "string",
+                        "description": "Optional file extension filter, with or without leading dot (e.g. pdf or .pdf)",
+                    },
                 },
                 "required": ["directory"],
             },
@@ -75,7 +79,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "search_in_file",
-            "description": "Search for a keyword in a text file; returns matching lines with context. Use get_path_by_name first to find where a file lives.",
+            "description": "Search for a keyword in a file (PDF, DOCX, or TXT); returns matching lines with context. Case-insensitive. Use get_path_by_name first to find where a file lives.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -109,7 +113,8 @@ def run_tool(name: str, arguments: dict) -> str:
         return json.dumps(fs_tools.read_file(path))
     if name == "list_files":
         path = resolve_path(arguments["directory"])
-        return json.dumps(fs_tools.list_files(path))
+        extension = arguments.get("extension")
+        return json.dumps(fs_tools.list_files(path, extension=extension))
     if name == "write_file":
         path = resolve_path(arguments["filepath"])
         return json.dumps(fs_tools.write_file(path, arguments["content"]))
@@ -210,7 +215,7 @@ def run_chat_ui() -> None:
 
     console.print(Panel(
         "[bold]LLM File Assistant[/]\n\n"
-        "Ask to list, read, search, or write files (e.g. sample_files/).\n"
+        "Ask to list, read, search, or write files (e.g. resumes/).\n"
         "Type [bold]exit[/] or [bold]quit[/] to end.",
         title="Chat",
         border_style="blue",
@@ -254,5 +259,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--chat":
         run_chat_ui()
     else:
-        prompt = "List files in sample_files, then read sample_files/notes.txt and summarize it in one sentence."
+        prompt = (
+            "List all files in the resumes folder, then search each resume for "
+            "'Python' and summarize who has Python experience."
+        )
         print(get_response(prompt))
