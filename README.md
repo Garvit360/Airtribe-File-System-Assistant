@@ -2,7 +2,7 @@
 
 ## Project brief
 
-A small system that combines **file-system tools** (read, list, write, search, find path by name) with an **LLM assistant** that calls those tools from natural-language prompts. Use it to list directories, read PDF/TXT/DOCX files, search for keywords, write files, and resolve where a file or folder lives by its case-sensitive name (e.g. “List files in sample_files”, “Where is notes.txt?”).
+A small system that combines **file-system tools** (read, list, write, search, find path by name) with an **LLM assistant** that calls those tools from natural-language prompts. Use it to list directories, read PDF/TXT/DOCX resumes, search for keywords (including inside PDF/DOCX), write summary files, and resolve paths by name (e.g. “Read all resumes in the resumes folder”, “Find resumes mentioning Python experience”).
 
 ---
 
@@ -29,14 +29,15 @@ A small system that combines **file-system tools** (read, list, write, search, f
 │  • read_file(filepath)     → dict (content, filename, size, err) │
 │  • list_files(dir, ext?)   → list of {name, size, modified}       │
 │  • write_file(path, content) → dict (success, path, error)        │
-│  • search_in_file(path, keyword) → dict (matches, keyword)        │
+│  • search_in_file(path, keyword) → dict (matches; PDF/DOCX/TXT)   │
 │  • get_path_by_name(root_dir, name) → dict (paths[], name)       │
 │  Supported: PDF (pypdf), DOCX (python-docx), TXT                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 - **fs_tools**: Pure file I/O. Paths may use `~`; it is expanded. `get_path_by_name(root_dir, name)` finds files/dirs by exact case-sensitive name under a root. No LLM dependency.
-- **llm_file_assistant**: Loads `.env` for `OPENAI_API_KEY`, defines tools, runs the chat loop, and executes tools via `fs_tools`. Paths are resolved against PROJECT_ROOT; relative paths that start with the project folder name are normalized so e.g. `LLM-Powered-File-System/sample_files` resolves to the project’s `sample_files`.
+- **llm_file_assistant**: Loads `.env` for `OPENAI_API_KEY`, defines tools (including optional `extension` on `list_files`), runs the chat loop, and executes tools via `fs_tools`. Paths are resolved against `PROJECT_ROOT`.
+- **Sample data**: `resumes/` holds TXT, PDF, and DOCX examples aligned with the assignment brief (`resume_john_doe.*`, `resume_jane_smith.txt`).
 
 ---
 
@@ -68,7 +69,7 @@ A small system that combines **file-system tools** (read, list, write, search, f
    python llm_file_assistant.py --chat
    ```
 
-   Interactive multi-turn chat: type prompts (e.g. “List files in sample_files”, “Read sample_files/notes.txt”). While the model thinks, you’ll see “Thinking…” and which tools are being called (e.g. “Calling: get_path_by_name, list_files”). Responses appear in panels. Type `exit` or `quit` to end.
+   Interactive multi-turn chat: type prompts (e.g. “List files in resumes”, “Find resumes mentioning Python”, “Create a summary file for resume_john_doe.pdf”). While the model thinks, you’ll see “Thinking…” and which tools are being called (e.g. “Calling: list_files, search_in_file”). Responses appear in panels. Type `exit` or `quit` to end.
 
    **Single prompt (no UI):**
 
@@ -76,7 +77,7 @@ A small system that combines **file-system tools** (read, list, write, search, f
    python llm_file_assistant.py
    ```
 
-   Runs one built-in prompt (list + summarize notes.txt). Edit the `prompt` in `if __name__ == "__main__"` to try other queries.
+   Runs one built-in prompt (list resumes + search for Python). Edit the `prompt` in `if __name__ == "__main__"` to try other queries.
 
 4. **Use the file tools alone (optional)**
 
@@ -84,4 +85,10 @@ A small system that combines **file-system tools** (read, list, write, search, f
    python fs_tools.py
    ```
 
-   This runs the demo in `fs_tools.py` (e.g. `list_files` on `sample_files`). Useful to verify file I/O without the LLM.
+   Lists files in `resumes/` and runs a sample keyword search. Useful to verify file I/O without the LLM.
+
+5. **Run tests (Part A)**
+
+   ```bash
+   pytest tests/ -q
+   ```
