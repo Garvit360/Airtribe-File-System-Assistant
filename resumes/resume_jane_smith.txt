@@ -1,0 +1,14 @@
+Jane Smith
+Email: jane.smith@example.com
+
+Summary
+Frontend-focused full-stack developer with strong JavaScript and React experience.
+
+Experience
+- UI Engineer, Northwind (2020–present): React, TypeScript, Node.js
+- Intern, Contoso (2019): HTML, CSS, JavaScript
+
+Skills
+React, TypeScript, Node.js, CSS
+
+Note: Completed a short Python scripting course; primary production language is JavaScript.
