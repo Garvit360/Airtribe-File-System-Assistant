@@ -1,0 +1,12 @@
+John Doe
+Email: john.doe@example.com
+
+Summary
+Backend engineer with 5 years of Python experience building APIs and data pipelines.
+
+Experience
+- Senior Developer, Acme Corp (2021-present): Python, FastAPI, PostgreSQL
+- Developer, Beta LLC (2019-2021): Python automation and ETL
+
+Skills
+Python, SQL, Docker, AWS

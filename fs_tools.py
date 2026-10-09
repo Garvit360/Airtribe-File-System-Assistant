@@ -1,0 +1,358 @@
+"""
+File system utilities for reading, writing, listing, and searching files.
+
+This module provides four core functions that return consistent dict shapes:
+- read_file: Extract text from PDF/TXT/DOCX files
+- list_files: List directory contents with metadata and optional filtering  
+- write_file: Write string content to files with automatic directory creation
+- search_in_file: Find keyword matches in files with surrounding context
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+import os
+from pathlib import Path
+import time
+
+from docx import Document
+from pypdf import PdfReader
+
+CONTEXT_LINES = 2
+
+
+def _keyword_matches(lines: list[str], keyword: str) -> list[dict[str, str | int]]:
+    """Return match dicts for keyword occurrences with surrounding line context."""
+    keyword_lower = keyword.lower()
+    matches: list[dict[str, str | int]] = []
+    line_count = len(lines)
+
+    for index, line in enumerate(lines):
+        if keyword_lower not in line.lower():
+            continue
+        start_context = max(0, index - CONTEXT_LINES)
+        end_context = min(line_count, index + CONTEXT_LINES + 1)
+        matches.append(
+            {
+                "line": line,
+                "line_number": index + 1,
+                "context_before": "\n".join(lines[start_context:index]).strip(),
+                "context_after": "\n".join(lines[index + 1 : end_context]).strip(),
+            }
+        )
+    return matches
+
+
+def read_file(filepath: str) -> dict:
+    """
+    Read and extract text content from PDF, DOCX, or TXT files.
+    
+    Args:
+        filepath: Path to the file to read
+        
+    Returns:
+        dict: {"content": str | None, "filename": str, "size": int, "error": str | None}
+              On success: content contains extracted text, error is None
+              On failure: content is None, error contains error message
+    """
+    try:
+        # Expand ~ to home directory and normalize path
+        path = Path(os.path.expanduser(filepath))
+        filepath = str(path)
+        filename = path.name
+        size = path.stat().st_size if path.exists() else 0
+        
+        # Dispatch by file extension
+        extension = path.suffix.lower()
+        content = None
+        
+        if extension == '.pdf':
+            # Extract text from all PDF pages
+            with open(filepath, 'rb') as file:
+                reader = PdfReader(file)
+                content = ""
+                for page in reader.pages:
+                    content += page.extract_text() + "\n"
+                content = content.strip()
+                
+        elif extension == '.docx':
+            # Extract text from DOCX paragraphs
+            doc = Document(filepath)
+            paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+            content = "\n".join(paragraphs)
+            
+        else:
+            # Handle TXT files and other text formats
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as file:
+                content = file.read()
+        
+        return {
+            "content": content,
+            "filename": filename,
+            "size": size,
+            "error": None
+        }
+        
+    except Exception as e:
+        return {
+            "content": None,
+            "filename": Path(filepath).name if filepath else "unknown",
+            "size": 0,
+            "error": str(e)
+        }
+
+
+def list_files(directory: str, extension: str | None = None) -> list[dict[str, str | int]]:
+    """
+    List all files in a directory with metadata, optionally filtered by extension.
+    
+    Args:
+        directory: Path to directory to scan
+        extension: Optional file extension filter (e.g., '.pdf', '.txt')
+        
+    Returns:
+        list: List of dicts with {"name": str, "size": int, "modified": str} per file
+    """
+    try:
+        # Expand ~ and normalize directory path
+        dir_path = Path(os.path.expanduser(directory))
+        if not dir_path.exists() or not dir_path.is_dir():
+            return []
+        
+        # Normalize extension filter if provided
+        if extension and not extension.startswith('.'):
+            extension = '.' + extension
+        
+        files_list = []
+        
+        # Scan directory for files only (skip directories)
+        for item in dir_path.iterdir():
+            if item.is_file():
+                # Apply extension filter if specified
+                if extension and item.suffix.lower() != extension.lower():
+                    continue
+                
+                # Get file metadata
+                stat_info = item.stat()
+                modified_time = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
+                
+                files_list.append({
+                    "name": item.name,
+                    "size": stat_info.st_size,
+                    "modified": modified_time
+                })
+        
+        # Return list of file metadata dicts
+        return files_list
+        
+    except Exception:
+        return []
+
+
+def write_file(filepath: str, content: str) -> dict:
+    """
+    Write string content to a file, creating parent directories if needed.
+    
+    Args:
+        filepath: Path where to write the file
+        content: String content to write
+        
+    Returns:
+        dict: {"success": bool, "path": str, "error": str | None}
+    """
+    try:
+        # Expand ~ and create Path object; ensure parent directories exist
+        path = Path(os.path.expanduser(filepath))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write content as UTF-8 text
+        path.write_text(content, encoding='utf-8')
+        
+        return {
+            "success": True,
+            "path": str(path),
+            "error": None
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "path": filepath,
+            "error": str(e)
+        }
+
+
+def search_in_file(filepath: str, keyword: str) -> dict:
+    """
+    Find all lines containing a keyword (case-insensitive) with surrounding context.
+
+    Uses the same text extraction as read_file, so PDF, DOCX, and TXT are supported.
+
+    Args:
+        filepath: Path to file to search in
+        keyword: Keyword to search for (case-insensitive)
+
+    Returns:
+        dict: {"matches": [...], "keyword": str, "error": str | None}
+    """
+    try:
+        read_result = read_file(filepath)
+        if read_result["error"]:
+            return {
+                "matches": [],
+                "keyword": keyword,
+                "error": read_result["error"],
+            }
+        lines = (read_result["content"] or "").splitlines()
+        matches = _keyword_matches(lines, keyword)
+        return {
+            "matches": matches,
+            "keyword": keyword,
+            "error": None,
+        }
+
+    except Exception as e:
+        return {
+            "matches": [],
+            "keyword": keyword,
+            "error": str(e),
+        }
+
+
+def get_path_by_name(root_dir: str, name: str) -> dict:
+    """
+    Find files or directories by exact case-sensitive name under root_dir.
+    
+    Args:
+        root_dir: Root directory to search under
+        name: Exact case-sensitive name to search for
+        
+    Returns:
+        dict: {"paths": list[str], "name": str}
+              paths contains all matching full paths (empty if no matches)
+    """
+    root_path = Path(os.path.expanduser(root_dir))
+    if not root_path.exists() or not root_path.is_dir():
+        return {"paths": [], "name": name}
+    
+    matches = []
+    
+    # Walk through all files and directories under root_dir
+    for item in root_path.rglob("*"):
+        if item.name == name:
+            matches.append(str(item.resolve()))
+    
+    return {"paths": matches, "name": name}
+
+
+DEFAULT_DEMO_PAUSE_SECONDS = 2.5
+
+
+def _demo_pause_seconds() -> float:
+    raw = os.environ.get("FS_TOOLS_DEMO_PAUSE", str(DEFAULT_DEMO_PAUSE_SECONDS))
+    return float(raw)
+
+
+_DEMO_STEP_STYLES: dict[str, str] = {
+    "read intro": "bold cyan",
+    "show list_files result": "bold green",
+    "review file list": "bold yellow",
+    "run search_in_file": "bold magenta",
+    "show search matches": "bold green",
+    "wrap up": "bold blue",
+}
+
+
+def _demo_pause(step: str) -> None:
+    from rich.console import Console
+
+    style = _DEMO_STEP_STYLES.get(step, "bold white")
+    Console().print(f"  ▸ {step}", style=style)
+    time.sleep(_demo_pause_seconds())
+
+
+def _print_demo_section(title: str) -> None:
+    print()
+    print("=" * 64)
+    print(title)
+    print("=" * 64)
+
+
+def _demo() -> None:
+    """Walk through Part A tools with context (no LLM, no API key)."""
+    root = Path(__file__).resolve().parent
+    resumes_dir = root / "resumes"
+    keyword = "Python"
+    sample_pdf = resumes_dir / "resume_john_doe.pdf"
+
+    _print_demo_section("fs_tools.py — Part A demo (file tools only)")
+    print("This script exercises read/list/search without OpenAI.")
+    print(f"Project root : {root}")
+    print(f"Sample folder: {resumes_dir.relative_to(root)}/")
+    print("Libraries    : pypdf (PDF), python-docx (DOCX), stdlib for TXT")
+    _demo_pause("read intro")
+
+    _print_demo_section("Step 1 — list_files(directory)")
+    print("Goal   : List resume files with name, size, and modified time.")
+    print(f"Call   : list_files(\"{resumes_dir.relative_to(root)}\")")
+    print("Process: Scan directory → stat each file → return metadata list")
+    _demo_pause("show list_files result")
+    print()
+    print("Result:")
+    entries = list_files(str(resumes_dir))
+    if not entries:
+        print("  (no files found — check that resumes/ exists)")
+    for entry in entries:
+        print(f"  - {entry['name']} ({entry['size']} bytes, modified {entry['modified']})")
+    print(f"Total: {len(entries)} file(s)")
+    _demo_pause("review file list")
+
+    if not sample_pdf.is_file():
+        _print_demo_section("Step 2 — skipped")
+        print(f"{sample_pdf.name} not found; add it under resumes/ to demo PDF search.")
+        return
+
+    _print_demo_section("Step 2 — search_in_file(filepath, keyword)")
+    print(f"Goal   : Find lines containing \"{keyword}\" (case-insensitive) with context.")
+    print(f"Call   : search_in_file(\"{sample_pdf.relative_to(root)}\", \"{keyword}\")")
+    print("Process:")
+    print("  1. Detect .pdf → use read_file() to extract text (pypdf)")
+    print("  2. Split text into lines")
+    print("  3. Match keyword on each line; attach lines before/after as context")
+    _demo_pause("run search_in_file")
+    print()
+    print("Running search…")
+    search_result = search_in_file(str(sample_pdf), keyword)
+    if search_result["error"]:
+        print(f"Error: {search_result['error']}")
+        return
+
+    matches = search_result["matches"]
+    _demo_pause("show search matches")
+    print()
+    print("Result:")
+    print(f"  Keyword : {search_result['keyword']}")
+    print(f"  Matches : {len(matches)} line(s)")
+    preview_count = min(2, len(matches))
+    for index in range(preview_count):
+        match = matches[index]
+        print()
+        print(f"  Match {index + 1} (line {match['line_number']}):")
+        print(f"    line          : {match['line']}")
+        if match["context_before"]:
+            print(f"    context_before: {match['context_before'][:120]}")
+        if match["context_after"]:
+            print(f"    context_after : {match['context_after'][:120]}")
+    if len(matches) > preview_count:
+        print(f"\n  … and {len(matches) - preview_count} more match(es) (truncated in demo)")
+    _demo_pause("wrap up")
+
+    _print_demo_section("Demo complete")
+    print("Next: run the GPT-style assistant (Part B) with:")
+    print("  python llm_file_assistant.py --chat")
+    print("The LLM will call the same tools based on your natural-language prompts.")
+    print()
+
+
+if __name__ == "__main__":
+    _demo()
